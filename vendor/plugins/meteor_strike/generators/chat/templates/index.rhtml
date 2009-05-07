@@ -1,0 +1,17 @@
+<%% form_remote_tag(:url => {:action => 'listen'}) do |f| %>
+  <%%= text_field_tag :name, session[:name] %>
+  <%%= submit_tag 'Listen' %><br />
+<%% end %>
+<%% form_remote_tag(:url => {:action => 'talk'}) do |f| %>
+  <%%= text_field_tag :message %>
+  <%%= submit_tag 'Talk' %><br />
+<%% end %>
+<ul id="chat-list">
+  <%% for chat in @chats %>
+    <%%= render_component :action => 'show', :id => chat.id %>
+  <%% end %>
+</ul>
+<%%= meteor_strike '<%= file_name %>', :uid => session[:name], :event => %Q{
+  new Ajax.Updater('chat-list', #{url_for(:action => 'event').to_json}, {
+    insertion: Insertion.Top, parameters: params})}
+%>

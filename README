@@ -1,0 +1,11 @@
+== Wellcome to zannen chat
+
+Comet chat like a Lingr
+
+== Getting Started
+
+1. gem install shooting_star
+2. shooting_star start -d
+3. rake db:migrate:reset
+4. script/server
+5. Go to http://localhost:3000/

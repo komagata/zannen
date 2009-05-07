@@ -1,0 +1,137 @@
+<div style="position: absolute;
+  <%- if options[:debug] -%>
+    top: 0px; right: 0px;
+  <%- else -%>
+    top: -99999px; left: -99999px;
+  <%- end -%>">
+  <iframe id="<%= iframe_id %>" name="<%= iframe_id %>"></iframe>
+  <form id="<%= iframe_id %>-form" target="<%= iframe_id %>" method="POST"
+    action="http://<%= shooting_star_uri %>">
+    <input name="execute" value="<%= uri %>/meteor/strike" />
+    <input name="tag" /><input name="uid" /><input name="sig" />
+    <input name="heartbeat" value="<%= options[:heartbeat] %>" />
+  </form>
+  <div id="<%= iframe_id %>-flash"></div>
+  <%= javascript_tag %Q{
+    window.meteorStrike_installed = true;
+    window.meteorStrike = window.meteorStrike || new Object;
+    meteorStrike.getFlashVersion = function(){
+      if(#{options[:noflash].to_json}) return 0;
+      var version = 0, ua = navigator.userAgent;
+      if(navigator.plugins && navigator.mimeTypes.length){
+        var x = navigator.plugins["Shockwave Flash"];
+        if(x && x.description) {
+          version = parseInt(x.description.replace(/([a-zA-Z]|\\s)+/, ""
+            ).replace(/(\\s+r|\\s+b[0-9]+)/, ".").split(".")[0]);
+        }
+      }else if(!ua || ua.indexOf("Windows CE") == -1){
+        try{
+          var axo = new ActiveXObject("ShockwaveFlash.ShockwaveFlash");
+          try{
+            axo.AllowScriptAccess = 'always';
+            version = axo.GetVariable('$version').split(' ')[1].split(",")[0];
+          }catch(e){version = 6}
+        }catch(e){}
+      }
+      return version;
+    };
+    (function(){
+      var channel = #{channel.to_json};
+      var UID = #{uid.to_json}, TAGS = #{tags.to_json};
+      var encodeTags = function(tags){
+        var encode = function(i){return encodeURIComponent(i)};
+        return $A(tags).uniq().map(encode).join(',');
+      };
+      var ms = meteorStrike[channel] = meteorStrike[channel] || new Object;
+      ms.getTags = function(){return TAGS};
+      ms.getUid = function(){return UID};
+      ms.executionQueue = {};
+      ms.executionCounter = null;
+      ms.evaluate = function(js, serialId){
+        if(ms.executionCounter == null){
+          ms.executionCounter = serialId;
+        }
+        ms.executionQueue[serialId] = js;
+        if(serialId == ms.executionCounter){
+          while(js = ms.executionQueue[ms.executionCounter]){
+            eval(js);
+            delete ms.executionQueue[ms.executionCounter];
+            ++ms.executionCounter;
+          }
+        }else{
+          setTimeout(function(){
+            if(js = ms.executionQueue[this]){
+              eval(js);
+              delete ms.executionQueue[this];
+              ms.executionCounter = null;
+            }
+          }.bind(serialId), 3000);
+        }
+      };
+      ms.event = function(params){
+        if(params.event == 'init'){
+          if(ms.connection) return;
+          if(ms.connecting && ms.connecting != params.type) return;
+          ms.connection = params.type;
+        }
+        (function(){#{options[:event]}})();
+      };
+      ms.update = function(uid, tags){
+        new Ajax.Request(#{update_uri.to_json}, {postBody: $H({
+          channel: channel, uid: uid || UID,
+          tag: encodeTags(tags || TAGS), sig: #{sig.to_json}
+        }).toQueryString(), asynchronous: true});
+        UID = uid || UID, TAGS = tags || TAGS;
+      };
+      ms.tuneIn = function(tags){
+        ms.update(UID, TAGS.concat(tags || []).uniq());
+      };
+      ms.tuneOut = function(tags){
+        ms.update(UID, Array.prototype.without.apply(TAGS, tags));
+      };
+      ms.tuneInOut = function(tagsIn, tagsOut){
+        var tags = TAGS.concat(tagsIn || []).uniq();
+        ms.update(UID, Array.prototype.without.apply(tags, tagsOut));
+      };
+      ms.tuneOutIn = function(tagsOut, tagsIn){
+        var tags = Array.prototype.without.apply(TAGS, tagsOut);
+        ms.update(UID, tags.concat(tagsIn || []).uniq());
+      };
+      Event.observe(window, 'load', function(){
+        setTimeout(ms.connector = function(){
+          if(ms.connection) return;
+          if(ms.connecting && ms.connecting != 'xhr') return;
+          var form = $("#{iframe_id}-form");
+          form.uid.value = #{uid.to_json};
+          form.tag.value = #{tag.to_json};
+          form.sig.value = #{sig.to_json};
+          var timerId = setTimeout(ms.connector, 3000);
+          $('#{iframe_id}').onload = function(){clearTimeout(timerId)};
+          form.submit();
+        }, meteorStrike.getFlashVersion() >= 8 ? 3000 : 0);
+      });
+    })();
+    function meteor_strike_#{@meteor_strike}_DoFSCommand(command, args){
+      var ms = meteorStrike[#{channel.to_json}];
+      args = unescape(args);
+      switch(command){
+      case 'execute':
+        if(ms.connection == 'flash' || ms.connecting == 'flash') eval(args);
+        else if($('#{iframe_id}-flash')) Element.remove('#{iframe_id}-flash');
+        break;
+      case 'event':
+        switch(args){
+        case 'connect': // intercept xhr connection
+          ms.connecting = 'flash';
+          if(ms.connection != 'flash') ms.connection = null;
+          if($('#{iframe_id}')) Element.remove('#{iframe_id}');
+          break;
+        }
+        break;
+      }
+    }
+    if(meteorStrike.getFlashVersion() >= 8){
+      $('#{iframe_id}-flash').innerHTML = #{@flash_html.to_json};
+    }
+  } %>
+</div>
